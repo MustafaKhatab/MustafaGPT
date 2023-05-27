@@ -9,52 +9,84 @@ import useAuth from "../../hooks/useAuth";
 import useTitle from "../../hooks/useTitle";
 import { useNavigate } from "react-router-dom";
 import { useSendLogoutMutation } from "../auth/authApiSlice";
+import PulseLoader from 'react-spinners/PulseLoader'
+
 
 const Chat = () => {
   useTitle("New Chat");
   const [value, setValue] = useState("");
+  const [newChatExists, setNewChatExists] = useState(false);
   const navigate = useNavigate();
   const [currentChat, setCurrentChat] = useState(null);
   const { userId } = useAuth();
   const { data: chatData, isLoading, isError } = useGetChatsQuery(userId);
-  const [addNewChat] = useAddNewChatMutation();
-  const [addNewMessage] = useAddNewMessageMutation();
-  const [addNewChatMessage] = useAddNewChatMessageMutation();
+  const [addNewChat,{isLoading:isLoadingNewChat,error:errorChat}] = useAddNewChatMutation();
+  const [addNewMessage,{isLoading:isLoadingMessages,error:errorMessage}] = useAddNewMessageMutation();
+  const [addNewChatMessage,{isLoading:isLoadingNewChatM,error:errorChatM}] = useAddNewChatMessageMutation();
   const [sendLogout, { isLoading: isLoggingOut }] = useSendLogoutMutation();
+  const reversedChatHistory = chatData ? Object.values(chatData.entities) : [];
+  const chatHistory = reversedChatHistory.reverse();
 
   useEffect(() => {
     document.title = currentChat?.title || "New Chat";
   }, [currentChat]);
 
+
   const createNewChat = async () => {
+    if(!newChatExists){
     setValue("");
-    setCurrentChat((await addNewChat({ userId: userId })).data);
-    document.title = currentChat.title;
+    const newChatData = await addNewChat({ userId: userId });
+    setCurrentChat(newChatData.data);
+    setNewChatExists(true);
+    }
+    else{
+    const newChat = chatHistory.find(chat => chat.messages.length === 0);
+    if (newChat) {
+      setCurrentChat(newChat);
+    }
+    }
   };
 
   const changeChat = (selectedChat) => {
     setCurrentChat(selectedChat);
     setValue("");
   };
+  useEffect(() => {
+    const newChat = chatHistory.find(chat => chat.messages.length === 0);
+    if (newChat) {
+      setNewChatExists(true);
+    }
+    else{
+      setNewChatExists(false);
+    }
+    
+  }, [chatHistory]);
 
   const getMessages = async () => {
     const message = { role: "user", content: value };
     setValue("");
     if (!currentChat) {
-      setCurrentChat(
-        (
-          await addNewChatMessage({
-            userId: userId,
-            role: "user",
-            content: value,
-          })
-        ).data
-      );
+      if(newChatExists){
+        const newChat = chatHistory.find(chat => chat.messages.length === 0);
+        const { data: current}=await addNewMessage({ chatId: newChat._id, message })
+        setCurrentChat(current);
+        setNewChatExists(false);
+      }
+      else{
+        const { data: current}=await addNewChatMessage({
+          userId: userId,
+          role: "user",
+          content: value,
+        })
+        
+        setCurrentChat(current);
+      }
+      
     } else {
-      setCurrentChat(
-        (await addNewMessage({ chatId: currentChat._id, message })).data
-      );
+      const { data: current}=await addNewMessage({ chatId: currentChat._id, message })
+      setCurrentChat(current);
     }
+    
   };
 
   const handleLogout = () => {
@@ -62,8 +94,7 @@ const Chat = () => {
     navigate("/");
   };
 
-  const reversedChatHistory = chatData ? Object.values(chatData.entities) : [];
-  const chatHistory = reversedChatHistory.reverse();
+  
 
   const renderedChatHistory = chatHistory.map((chat) => (
     <li
@@ -85,6 +116,7 @@ const Chat = () => {
     <div className="app">
       <section className="side-bar">
         <button onClick={createNewChat}>+ New Chat</button>
+        {isLoadingNewChat && !errorChat && <PulseLoader className="custom-loader" size={5} margin={5} color={'#FFF'}></PulseLoader>}
         <ul className="history">{renderedChatHistory}</ul>
         <nav>
           <button
@@ -135,7 +167,13 @@ const Chat = () => {
                 <p className="chatContent">{message.content}</p>
               </div>
             </li>
+
           ))}
+          {errorMessage && <div className="error">{errorMessage.data.message}</div>}
+          {isLoadingMessages && !errorMessage && <PulseLoader className="custom-loader" size={13} margin={20} color={'#FFF'}></PulseLoader>}
+          {errorChatM && <div className="error">{errorChatM.data.message}</div>}
+          {isLoadingNewChatM && !errorChatM && <PulseLoader className="custom-loader" size={13} margin={20} color={'#FFF'}></PulseLoader>}
+          {errorChat && <div className="error">{errorChat.data.message}</div>}
         </ul>)}
         <div className="bottom-section">
           <div className="input-container">
